@@ -12,7 +12,7 @@ Plugin allows to highlight text in licit.
 
 #### To use this in Licit
 
-- npm install *mo-licit-highlight-text-0.1.0.tgz*
+- npm install *mo-licit-plugin-highlight-0.1.0.tgz*
 
 ####  To include plugin in Licit Component 
 
@@ -21,7 +21,7 @@ Plugin allows to highlight text in licit.
 - add LicitHighlightTextPlugin instance in licit's plugin array
 
 ```
-import LicitHighlightTextPlugin from '@mo/licit-highlight-text';  
+import LicitHighlightTextPlugin from '@modusoperandi/licit-plugin-highlight';  
 const plugins = [new LicitHighlightTextPlugin()]
 
 ReactDOM.render(<Licit docID={0} plugins={plugins}/>)
