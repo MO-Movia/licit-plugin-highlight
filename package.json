@@ -1,0 +1,80 @@
+{
+  "name": "@modusoperandi/licit-plugin-highlight",
+  "version": "1.0.0",
+  "type": "module",
+  "subversion": "1",
+  "description": "Plugin responsible for highlighting text in licit.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MO-Movia/licit.git"
+  },
+  "scripts": {
+    "test": "jest --coverage",
+    "lint:ts": "eslint src --ext .ts",
+    "lint:css": "echo no CSS in this project",
+    "lint": "npm run lint:css & npm run lint:ts",
+    "test:unit": "jest --coverage",
+    "test:coverage": "jest --coverage",
+    "debug": "node --debug-brk --inspect ./node_modules/.bin/jest -i",
+    "ci:build": "tsc --build && copyfiles --up 1 \"src/**/*.css\" dist  && copyfiles package.json dist",
+    "ci:bom": "cyclonedx-npm --ignore-npm-errors --short-PURLs --output-format XML --output-file dist/bom.xml",
+    "verify": "npm run lint -- --fix && npm run ci:build && npm run test:coverage && echo 'All Tests Passed!'"
+  },
+  "peerDependencies": {
+    "@modusoperandi/licit-ui-commands": "^1.0.3",
+    "prosemirror-model": "^1.16.0",
+    "prosemirror-state": "^1.4.2",
+    "prosemirror-transform": "^1.7.0",
+    "prosemirror-view": "^1.27.0"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "^1.7.1",
+    "@types/jest": "^29.0.3",
+    "@types/node": "^18.11.17",
+    "@typescript-eslint/eslint-plugin": "^5.47.0",
+    "@typescript-eslint/parser": "^5.47.0",
+    "copyfiles": "^2.4.1",
+    "eslint": "^8.30.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-jest": "^27.0.4",
+    "eslint-plugin-prettier": "^4.2.1",
+    "eslint-plugin-react": "^7.31.11",
+    "husky": "^8.0.1",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^29.0.3",
+    "jest-environment-jsdom": "^29.0.3",
+    "jest-junit": "^15.0.0",
+    "jest-prosemirror": "^1.0.10",
+    "jest-sonar-reporter": "^2.0.0",
+    "lint-staged": "^15.4.0",
+    "prettier": "^2.7.1",
+    "ts-jest": "^29.0.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.8.3"
+  },
+  "overrides": {
+    "libxmljs2": "^1.0.0"
+  },
+  "importSort": {
+    ".js": {
+      "parser": "babylon",
+      "style": "module-grouping"
+    }
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "!(*test|*.setup).ts": [
+      "eslint --fix"
+    ],
+    "*.json": [
+      "prettier --write"
+    ]
+  }
+}

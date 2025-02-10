@@ -1,0 +1,254 @@
+image: timbru31/node-chrome:iron
+clone:
+  depth: full
+
+definitions:
+  services:
+    docker:
+      memory: 3072
+
+  caches:
+    node:
+      key:
+        files:
+          - package-lock.json
+      path: node_modules
+
+  steps:
+    - step: &install
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        name: 'Install'
+        caches:
+          - node
+        script:
+          - npm config set registry=${NEXUS_URL}repository/npm-internal/
+          - npm config set _auth="$(echo -n "$NEXUS_USERNAME:$NEXUS_PASS" | base64)"
+          - npm config fix
+          - npm ci
+
+    - step: &lint
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        name: 'Lint'
+        caches:
+          - node
+        script:
+          - npm run lint
+
+    - step: &build
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        caches:
+          - node
+        artifacts:
+          - dist/**
+        name: 'Build'
+        script:
+          - npm run ci:build
+
+    - step: &unittest
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        size: 4x
+        caches:
+          - node
+        artifacts:
+          - coverage/**
+        name: 'Test'
+        script:
+          - npm run test:unit
+
+    - step: &cbom
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        size: 2x
+        caches:
+          - node
+        artifacts:
+          - bom/**
+        name: Create BOM
+        script:
+          - mkdir bom
+          - chmod -R 777 bom
+          - pipe: docker://ccideas/cyclonedx-npm-pipe:1.6.0
+            variables:
+              NPM_SHORT_PURLS: 'true' # optional
+              OUTPUT_DIRECTORY: 'bom' # optional # this dir should be archived by the pipeline
+
+    - step: &codecheck
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        size: 4x
+        caches:
+          - node
+        name: 'Code Standards check'
+        script:
+          - pipe: docker://aligent/owasp-dependency-check-pipe
+            variables:
+              SCAN_PATH: '.'
+              CVSS_FAIL_LEVEL: '1'
+              SUPPRESSION_FILE_PATH: './suppression.xml'
+              NVD_API_KEY: ${NVD_KEY}
+              EXTRA_ARGS: '--exclude node_modules/node-gyp/**/*'
+
+    - step: &pbom
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        name: Process BOM
+        script:
+          - chmod -R 777 bom
+          - pipe: docker://ccideas/sbom-utilities-pipe:1.6.0
+            variables:
+              PATH_TO_SBOM: 'bom/${BITBUCKET_REPO_SLUG}.json'
+              SCAN_SBOM_WITH_BOMBER: 'true' # to enable a bomber scan
+              BOMBER_OUTPUT_FORMAT: 'stdout'
+              OUTPUT_DIRECTORY: 'bom'
+              SCAN_SBOM_WITH_SBOMQS: 'true' # to enable an sbomqs scan
+              SBOMQS_OUTPUT_FORMAT: 'detailed'
+              SCAN_SBOM_WITH_OSV: 'true' # to enable an osv scan
+              OSV_OUTPUT_FORMAT: 'table'
+              # OWASP Dependency Track
+              SEND_SBOM_TO_DTRACK: 'true'
+              DTRACK_URL: ${DEPTRACK_URL}
+              DTRACK_PROJECT_ID: ${DTPI}
+              DTRACK_API_KEY: ${DEPTRACK_KEY}
+
+    - step: &sonartest
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        size: 2x
+        name: SonarQube
+        script:
+          - TAG=$(npm pkg get version --workspaces=false | tr -d \")
+          - pipe: docker://sonarsource/sonarqube-scan:3.1.0
+            variables:
+              SONAR_HOST_URL: ${SONAR_TEST_URL}
+              SONAR_TOKEN: ${SONAR_TEST_TOKEN}
+              EXTRA_ARGS: '-Dsonar.qualitygate.wait=true -Dsonar.projectVersion=${TAG}'
+
+    - step: &sonarprod
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        size: 2x
+        name: SonarQube
+        script:
+          - TAG=$(npm pkg get version --workspaces=false | tr -d \")
+          - pipe: docker://sonarsource/sonarqube-scan:3.1.0
+            variables:
+              SONAR_HOST_URL: ${SONAR_PROD_URL}
+              SONAR_TOKEN: ${SONAR_PROD_TOKEN}
+              EXTRA_ARGS: '-Dsonar.qualitygate.wait=true -Dsonar.projectVersion=${TAG}'
+
+    - step: &publish
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        name: Publish to Nexus
+        deployment: production
+        script:
+          - npm config set registry=${NEXUS_URL}repository/npm-internal/
+          - npm config set _auth="$(echo -n "$NEXUS_USERNAME:$NEXUS_PASS" | base64)"
+          - npm config fix
+          - npm publish --registry ${NEXUS_URL}repository/npm-internal/ dist/
+
+    - step: &tag
+        runs-on:
+          - 'self.hosted'
+          - 'linux'
+        name: Tag version
+        script:
+          - TAG=v$(npm pkg get version --workspaces=false | tr -d \")
+          - git tag -am "Tagging for release ${TAG}" ${TAG}
+          - git push origin ${TAG}
+
+pipelines:
+  custom:
+    'Test Branch':
+      - step: *install
+      - parallel:
+          - step: *lint
+          - step: *build
+          - step: *cbom
+      - step: *unittest
+      - step: *codecheck
+      - parallel:
+          - step: *sonartest
+          - step: *pbom
+    'Bump Version':
+      - variables:
+          - name: Type
+            default: 'patch'
+            allowed-values:
+              - 'patch'
+              - 'minor'
+              - 'major'
+      - step:
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+          name: 'Bump Version'
+          script:
+            - npm version $Type --no-commit-hooks --no-git-tag-version
+            - TAG=v$(npm pkg get version --workspaces=false | tr -d \")
+            - git commit -a -m "[skip ci] Bump version to ${TAG}"
+            - git push origin
+    'Create Release Candidate':
+      - step:
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+          name: 'Bump RC Version'
+          script:
+            - npm version pre --preid=rc --no-commit-hooks --no-git-tag-version
+            - TAG=v$(npm pkg get version --workspaces=false | tr -d \")
+            - git commit -a -m "[skip ci] Bump version to ${TAG}"
+            - git push origin
+      - step: *publish
+    'Update package-lock.json':
+      - step:
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+          name: 'npm update'
+          script:
+            - npm update
+            # reinstall to fix lock because of bug in npm install/update https://github.com/npm/cli/issues/6787
+            - npm install
+            - git commit -a -m "update package-lock.json"
+            - git push origin
+  pull-requests:
+    '**':
+      - step: *install
+      - parallel:
+          - step: *lint
+          - step: *build
+          - step: *cbom
+      - step: *unittest
+      - step: *codecheck
+      - parallel:
+          - step: *sonartest
+          - step: *pbom
+  branches:
+    master:
+      - step: *install
+      - parallel:
+          - step: *lint
+          - step: *build
+          - step: *cbom
+      - step: *unittest
+      - step: *codecheck
+      - parallel:
+          - step: *sonarprod
+          - step: *pbom
+      - step: *publish
+      - step: *tag
