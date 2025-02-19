@@ -107,6 +107,9 @@ describe('LicitHighlightTextPlugin', () => {
   it('should handle apply',()=>{
     expect(plugin.spec.state?.apply({doc:docNode,docChanged:false,getMeta:()=>{return {searchTerm:'searchTerm',highlightClass:'match-highlight',selectedHighlight:'modusoperandi'};}} as unknown as Transaction,{},{} as unknown as EditorState,{} as unknown as EditorState)).toBeDefined();
   });
+  it('should handle apply without searchterm',()=>{
+    expect(plugin.spec.state?.apply({doc:docNode,docChanged:false,getMeta:()=>{return {searchTerm:'',highlightClass:'match-highlight',selectedHighlight:'modusoperandi'};}} as unknown as Transaction,{},{} as unknown as EditorState,{} as unknown as EditorState)).toBeDefined();
+  });
   it('should handle apply without selectedhighlight',()=>{
     expect(plugin.spec.state?.apply({doc:docNode,docChanged:false,getMeta:()=>{return {searchTerm:'searchTerm',highlightClass:'match-highlight',selectedHighlight:''};}} as unknown as Transaction,{},{} as unknown as EditorState,{} as unknown as EditorState)).toBeDefined();
   });
@@ -118,11 +121,18 @@ describe('LicitHighlightTextPlugin', () => {
 
 
   it('should handle updateSearchTerm',()=>{
-    expect(LicitHighlightTextPlugin.updateSearchTerm({dispatch:()=>{},state:{tr:{setMeta:()=>{}}}} as unknown as EditorView,'test','test','test')).toBeUndefined();
+    const HighlightDocProperties= {
+      activeHighlightClass: 'match-highlight',
+      selectedHighlight: 'paragrapghId',
+      individualHighlightClass: 'individual-highlight',
+    };
+    expect(LicitHighlightTextPlugin.updateSearchTerm({dispatch:()=>{},state:{tr:{setMeta:()=>{}}}} as unknown as EditorView,'test',HighlightDocProperties)).toBeUndefined();
   });
 
   it('should handle updateSearchTerm when there is no selected id',()=>{
-    expect(LicitHighlightTextPlugin.updateSearchTerm({dispatch:()=>{},state:{tr:{setMeta:()=>{}}}} as unknown as EditorView,'test','test','')).toBeUndefined();
+    expect(LicitHighlightTextPlugin.updateSearchTerm({dispatch:()=>{},state:{tr:{setMeta:()=>{}}}} as unknown as EditorView,'test',{
+      activeHighlightClass: ''
+    })).toBeUndefined();
   });
   it('should handle apply when undefined is searchterm', () => {
     const pluginInstance = plugin as Plugin<any>;

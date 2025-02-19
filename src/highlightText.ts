@@ -2,29 +2,35 @@ import { Node } from 'prosemirror-model';
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 
+export interface HighlightDocProperties {
+  activeHighlightClass: string;
+  selectedHighlight?: string;
+  individualHighlightClass?: string;
+}
+const highlightDecorations = DecorationSet.empty;
 export class LicitHighlightTextPlugin extends Plugin {
 
   constructor() {
     super({
         key: new PluginKey('LicitHighlightTextPlugin'),
       state: {
-        init(_, { doc }) {
-          return LicitHighlightTextPlugin.findHighlights(doc, '', '', '','');
+        init(_) {
+          return highlightDecorations;
         },
         apply(tr, oldState, newState) {
-          if (!tr.docChanged && oldState === newState) {
+          if (!tr.docChanged && oldState === newState ) {
             return oldState;
           }
 
-          this.searchTerm = tr.getMeta('search')?.searchTerm;
-          this.highlightClss = tr.getMeta('search')?.highlightClass;
-          this.selectedHighlight = tr.getMeta('search')?.selectedHighlight;
-          this.individualHighlightClass = tr.getMeta('search')?.individualHighlightClass;
-
-          if (undefined === this.searchTerm) {
-            return oldState;
+          if (undefined !== tr.getMeta('search')?.searchTerm) {
+            this.searchTerm = tr.getMeta('search')?.searchTerm;
+            this.highlightClss = tr.getMeta('search')?.highlightClass;
+            this.selectedHighlight = tr.getMeta('search')?.selectedHighlight;
+            this.individualHighlightClass = tr.getMeta('search')?.individualHighlightClass;
           }
-
+          else if (tr.getMeta('search')?.searchTerm === undefined && !tr.docChanged){
+             return oldState;
+          }
           return {
             ...oldState,
             decorations: LicitHighlightTextPlugin.findHighlights(
@@ -34,7 +40,7 @@ export class LicitHighlightTextPlugin extends Plugin {
               this.selectedHighlight,
               this.individualHighlightClass
             ),
-             };
+          };
         },
       },
       props: {
@@ -103,7 +109,7 @@ export class LicitHighlightTextPlugin extends Plugin {
     }
     return DecorationSet.create(doc, decorations);
   }
-  // 🔹 Function to handle highlighting across multiple text nodes
+  // Function to handle highlighting across multiple text nodes
   static highLight(
     regex: RegExp,
     mergedText: string,
@@ -129,16 +135,18 @@ export class LicitHighlightTextPlugin extends Plugin {
     }
   }
 
-  static updateSearchTerm(view: EditorView, searchTerm: string, highlightClass: string, selectedHighlight?: string, individualHighlightClass?:string) {
+  static updateSearchTerm(view: EditorView, searchTerm: string, HighlightDocProperties :HighlightDocProperties) {
 
-   const selectedId = selectedHighlight || '';
+   const selectedId = HighlightDocProperties.selectedHighlight || '';
+   const highlightClass = HighlightDocProperties.activeHighlightClass;
+   const individualHighlightClass = HighlightDocProperties.individualHighlightClass;
 
     view.dispatch(
       view.state.tr.setMeta('search', {
         searchTerm,
         highlightClass,
         selectedHighlight: selectedId,
-        individualHighlightClass:individualHighlightClass
+        individualHighlightClass
       })
     );
   }
