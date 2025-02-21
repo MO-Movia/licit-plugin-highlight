@@ -138,9 +138,8 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     const regex = new RegExp(searchTerm, 'gi');
 
     let textContent = '';
-    let textPositions: number[] = [];
-    let selectedParaPositions = new Set<number>();
-    let currentParaStart = 0;
+    const textPositions: number[] = [];
+    const selectedParaPositions = new Set<number>();
     let nodeSize = 0;
 
     // First pass: collect text, positions, and find selected paragraphs
@@ -197,7 +196,7 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
       '\\$&'
     );
     const regex = new RegExp(searchTerm, 'gi');
-    let selectedParaPositions = new Set<number>();
+    const selectedParaPositions = new Set<number>();
     let nodeSize = 0;
 
     // Find selected paragraphs in range
@@ -210,7 +209,7 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     });
 
     let textContent = '';
-    let textPositions: number[] = [];
+    const textPositions: number[] = [];
 
     // Collect text and positions within range
     doc.nodesBetween(range.from, range.to, (node, pos) => {
