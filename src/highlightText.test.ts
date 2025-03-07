@@ -1,9 +1,12 @@
-import { LicitHighlightTextPlugin } from './highlightText';
-import { DecorationSet, EditorView } from 'prosemirror-view';
-import { EditorState, EditorStateConfig, Transaction } from 'prosemirror-state';
 import { Schema } from 'prosemirror-model';
-import { Plugin } from 'prosemirror-state';
-import { PluginState } from './highlightText';
+import {
+  EditorState,
+  EditorStateConfig,
+  Plugin,
+  Transaction,
+} from 'prosemirror-state';
+import { DecorationSet, EditorView } from 'prosemirror-view';
+import { LicitHighlightTextPlugin, PluginState } from './highlightText';
 const writeText = jest.fn();
 
 Object.assign(navigator, {
@@ -471,6 +474,72 @@ describe('LicitHighlightTextPlugin', () => {
         mockEditorState
       );
       expect(result?.decorations).toBeDefined();
+    });
+  });
+
+  it('should return an empty array when searchTerm is empty or null', () => {
+    const stateWithEmptySearchTerm = {
+      searchTerm: '',
+    } as unknown as PluginState;
+    const stateWithNullSearchTerm = {
+      searchTerm: null,
+    } as unknown as PluginState;
+    const resultEmpty = LicitHighlightTextPlugin.findHighlightsInRange(
+      docNode,
+      stateWithEmptySearchTerm,
+      { from: 0, to: docNode.content.size }
+    );
+    const resultNull = LicitHighlightTextPlugin.findHighlightsInRange(
+      docNode,
+      stateWithNullSearchTerm,
+      { from: 0, to: docNode.content.size }
+    );
+    expect(resultEmpty).toEqual([]);
+    expect(resultNull).toEqual([]);
+  });
+  it('should return changed ranges when encountering non-textblock nodes', () => {
+    const tr = {
+      doc: {
+        content: { size: 50 },
+        nodesBetween: jest.fn((from, to, callback) => {
+          callback({ isTextblock: false }, from);
+        }),
+      },
+      mapping: {
+        maps: [
+          {
+            forEach: (fn: Function) => fn(5, 10, 5, 10),
+          },
+        ],
+      },
+      steps: [{}],
+    } as unknown as Transaction;
+    const ranges = LicitHighlightTextPlugin.getChangedRanges(tr);
+    expect(ranges).toBeDefined();
+    expect(Array.isArray(ranges)).toBe(true);
+    expect(ranges.length).toBeGreaterThan(0);
+  });
+  describe('LicitHighlightTextPlugin findHighlights method', () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: 'text*' },
+        text: {},
+      },
+    });
+    it('should use empty string as highlightClass when state.highlightClass is undefined', () => {
+      const doc = schema.node('doc', null, [
+        schema.text('test highlight test'),
+      ]);
+      const state: PluginState = {
+        decorations: DecorationSet.empty,
+        searchTerm: 'highlight',
+        highlightClass: undefined,
+      };
+      const result = LicitHighlightTextPlugin.findHighlights(doc, state);
+      expect(result).toBeInstanceOf(DecorationSet);
+      expect(result.find()).toHaveLength(1);
+      const decoration = result.find()[0];
+      expect(decoration.spec.class).toBeFalsy();
     });
   });
 });
