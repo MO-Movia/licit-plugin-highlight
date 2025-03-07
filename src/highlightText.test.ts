@@ -1,13 +1,8 @@
 import { Schema } from 'prosemirror-model';
-import {
-  EditorState,
-  EditorStateConfig,
-  Plugin,
-  Transaction,
-} from 'prosemirror-state';
+import { EditorState, EditorStateConfig, Transaction } from 'prosemirror-state';
 import { DecorationSet, EditorView } from 'prosemirror-view';
-import { LicitHighlightTextPlugin, PluginState } from './highlightText';
-const writeText = jest.fn();
+import { LicitHighlightTextPlugin, PluginState } from '.';
+const writeText = jest.fn().mockReturnValue('copy');
 
 Object.assign(navigator, {
   clipboard: {
@@ -16,23 +11,17 @@ Object.assign(navigator, {
 });
 describe('LicitHighlightTextPlugin', () => {
   jest.mock('prosemirror-model', () => {
-    const originalModule = jest.requireActual('prosemirror-model');
-    beforeAll(() => {
-      navigator.clipboard.writeText('copy');
+    const originalModule: { DOMParser: () => object } =
+      jest.requireActual('prosemirror-model');
+    jest.spyOn(originalModule, 'DOMParser').mockReturnValue({
+      fromSchema: jest.fn(() => ({
+        parse: jest.fn(),
+      })),
     });
-
-    return {
-      ...originalModule,
-      DOMParser: {
-        fromSchema: jest.fn(() => ({
-          parse: jest.fn(),
-        })),
-      },
-    };
   });
   const consoleErrorSpy = jest
     .spyOn(console, 'error')
-    .mockImplementation(() => {});
+    .mockImplementation(() => undefined);
 
   beforeEach(() => {
     consoleErrorSpy.mockClear();
@@ -44,18 +33,6 @@ describe('LicitHighlightTextPlugin', () => {
 
   afterAll(() => {
     consoleErrorSpy.mockRestore();
-  });
-  beforeEach(() => {
-    const createElement = document.createElement.bind(document);
-    document.createElement = (tagName) => {
-      if (tagName === 'canvas') {
-        return {
-          getContext: () => ({}),
-          measureText: () => ({}),
-        };
-      }
-      return createElement(tagName);
-    };
   });
   const plugin = new LicitHighlightTextPlugin();
   const mySchema = new Schema({
@@ -73,7 +50,11 @@ describe('LicitHighlightTextPlugin', () => {
             }),
           },
         ],
-        toDOM: (node) => ['p', { 'data-objectid': node.attrs.objectiId }, 0],
+        toDOM: (node) => [
+          'p',
+          { 'data-objectid': node.attrs.objectiId as string },
+          0,
+        ],
       },
       text: { group: 'inline' },
     },
@@ -109,14 +90,6 @@ describe('LicitHighlightTextPlugin', () => {
     expect(plugin).toBeDefined();
   });
 
-  it('should handle init', () => {
-    expect(
-      plugin.spec.state?.init(
-        null as unknown as EditorStateConfig,
-        { docNode } as unknown as EditorState
-      )
-    ).toBeDefined();
-  });
   it('should handle init', () => {
     expect(
       plugin.spec.state?.init(
@@ -214,15 +187,15 @@ describe('LicitHighlightTextPlugin', () => {
 
   it('should handle updateSearchTerm', () => {
     const HighlightDocProperties = {
-      activeHighlightClass: 'match-highlight',
+      highlightClass: 'match-highlight',
       selectedHighlight: 'paragrapghId',
       individualHighlightClass: 'individual-highlight',
     };
     expect(
       LicitHighlightTextPlugin.updateSearchTerm(
         {
-          dispatch: () => {},
-          state: { tr: { setMeta: () => {} } },
+          dispatch: () => undefined,
+          state: { tr: { setMeta: () => undefined } },
         } as unknown as EditorView,
         'test',
         HighlightDocProperties
@@ -234,46 +207,48 @@ describe('LicitHighlightTextPlugin', () => {
     expect(
       LicitHighlightTextPlugin.updateSearchTerm(
         {
-          dispatch: () => {},
-          state: { tr: { setMeta: () => {} } },
+          dispatch: () => undefined,
+          state: { tr: { setMeta: () => undefined } },
         } as unknown as EditorView,
         'test',
         {
-          activeHighlightClass: '',
+          highlightClass: '',
         }
       )
     ).toBeUndefined();
   });
-  it('should handle apply when undefined is searchterm', () => {
-    const pluginInstance = plugin as Plugin<any>;
-    pluginInstance.getState = () => {
-      return {};
-    };
-    const boundDecorations =
-      pluginInstance.spec.props?.decorations?.bind(pluginInstance);
+  it('should handle apply when state empty', () => {
+    const pluginInstance = plugin;
+    jest.spyOn(pluginInstance, 'getState').mockReturnValue({} as PluginState);
+    const boundDecorations = pluginInstance.spec.props?.decorations?.bind(
+      pluginInstance
+    ) as (state: EditorState) => unknown;
     expect(boundDecorations?.({} as unknown as EditorState)).toBeUndefined();
   });
 
   describe('Decoration Props', () => {
     it('should return decorations from plugin state', () => {
-      const pluginInstance = plugin as Plugin<any>;
-      pluginInstance.getState = () => ({
+      const pluginInstance = plugin;
+      jest.spyOn(pluginInstance, 'getState').mockReturnValue({
+        highlightClass: 'hi',
         decorations: DecorationSet.empty,
       });
 
-      const boundDecorations =
-        pluginInstance.spec.props?.decorations?.bind(pluginInstance);
+      const boundDecorations = pluginInstance.spec.props?.decorations?.bind(
+        pluginInstance
+      ) as (state: EditorState) => unknown;
       const result = boundDecorations?.({} as unknown as EditorState);
 
       expect(result).toBeDefined();
     });
 
     it('should handle undefined plugin state', () => {
-      const pluginInstance = plugin as Plugin<any>;
-      pluginInstance.getState = () => undefined;
+      const pluginInstance = plugin;
+      jest.spyOn(pluginInstance, 'getState').mockReturnValue(undefined);
 
-      const boundDecorations =
-        pluginInstance.spec.props?.decorations?.bind(pluginInstance);
+      const boundDecorations = pluginInstance.spec.props?.decorations?.bind(
+        pluginInstance
+      ) as (state: EditorState) => unknown;
       const result = boundDecorations?.({} as unknown as EditorState);
 
       expect(result).toBeUndefined();
@@ -283,7 +258,7 @@ describe('LicitHighlightTextPlugin', () => {
   describe('Update Search Term', () => {
     it('should handle updateSearchTerm with all properties', () => {
       const HighlightDocProperties = {
-        activeHighlightClass: 'match-highlight',
+        highlightClass: 'match-highlight',
         selectedHighlight: 'paragraphId',
         individualHighlightClass: 'individual-highlight',
       };
@@ -305,7 +280,7 @@ describe('LicitHighlightTextPlugin', () => {
 
     it('should handle updateSearchTerm without selectedHighlight', () => {
       const HighlightDocProperties = {
-        activeHighlightClass: 'match-highlight',
+        highlightClass: 'match-highlight',
       };
 
       const mockDispatch = jest.fn();
@@ -335,6 +310,7 @@ describe('LicitHighlightTextPlugin', () => {
 
       const decorations = LicitHighlightTextPlugin.findHighlightsInRange(
         docNode,
+        state.searchTerm,
         state as PluginState,
         { from: 0, to: docNode.content.size }
       );
@@ -350,6 +326,7 @@ describe('LicitHighlightTextPlugin', () => {
 
       const decorations = LicitHighlightTextPlugin.findHighlightsInRange(
         docNode,
+        state.searchTerm,
         state as PluginState,
         { from: 0, to: docNode.content.size }
       );
@@ -365,7 +342,9 @@ describe('LicitHighlightTextPlugin', () => {
         mapping: {
           maps: [
             {
-              forEach: (fn: Function) => fn(0, 5, 0, 5),
+              forEach: (
+                fn: (a: number, b: number, c: number, d: number) => void
+              ) => fn(0, 5, 0, 5),
             },
           ],
         },
@@ -382,8 +361,16 @@ describe('LicitHighlightTextPlugin', () => {
         doc: docNode,
         mapping: {
           maps: [
-            { forEach: (fn: Function) => fn(0, 5, 0, 5) },
-            { forEach: (fn: Function) => fn(4, 8, 4, 8) },
+            {
+              forEach: (
+                fn: (a: number, b: number, c: number, d: number) => void
+              ) => fn(0, 5, 0, 5),
+            },
+            {
+              forEach: (
+                fn: (a: number, b: number, c: number, d: number) => void
+              ) => fn(4, 8, 4, 8),
+            },
           ],
         },
         steps: [{}, {}],
@@ -486,11 +473,13 @@ describe('LicitHighlightTextPlugin', () => {
     } as unknown as PluginState;
     const resultEmpty = LicitHighlightTextPlugin.findHighlightsInRange(
       docNode,
+      stateWithEmptySearchTerm.searchTerm,
       stateWithEmptySearchTerm,
       { from: 0, to: docNode.content.size }
     );
     const resultNull = LicitHighlightTextPlugin.findHighlightsInRange(
       docNode,
+      stateWithNullSearchTerm.searchTerm,
       stateWithNullSearchTerm,
       { from: 0, to: docNode.content.size }
     );
@@ -501,14 +490,18 @@ describe('LicitHighlightTextPlugin', () => {
     const tr = {
       doc: {
         content: { size: 50 },
-        nodesBetween: jest.fn((from, to, callback) => {
-          callback({ isTextblock: false }, from);
-        }),
+        nodesBetween: jest.fn(
+          (from, _to, callback: (a: unknown, b: unknown) => unknown) => {
+            callback({ isTextblock: false }, from);
+          }
+        ),
       },
       mapping: {
         maps: [
           {
-            forEach: (fn: Function) => fn(5, 10, 5, 10),
+            forEach: (
+              fn: (a: number, b: number, c: number, d: number) => unknown
+            ) => fn(5, 10, 5, 10),
           },
         ],
       },
@@ -533,13 +526,17 @@ describe('LicitHighlightTextPlugin', () => {
       const state: PluginState = {
         decorations: DecorationSet.empty,
         searchTerm: 'highlight',
-        highlightClass: undefined,
+        highlightClass: undefined!,
       };
-      const result = LicitHighlightTextPlugin.findHighlights(doc, state);
+      const result = LicitHighlightTextPlugin.findHighlights(
+        doc,
+        state.searchTerm,
+        state
+      );
       expect(result).toBeInstanceOf(DecorationSet);
       expect(result.find()).toHaveLength(1);
       const decoration = result.find()[0];
-      expect(decoration.spec.class).toBeFalsy();
+      expect((decoration.spec as Record<string, unknown>).class).toBeFalsy();
     });
   });
 });

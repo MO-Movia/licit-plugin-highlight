@@ -43,7 +43,7 @@ export default {
   ],
 
   // An object that configures minimum threshold enforcement for coverage results
-  coverageThreshold: { global: { branches: 80, functions: 80, lines: 80, }, },
+  coverageThreshold: { global: { branches: 80, functions: 80, lines: 80 } },
 
   // A path to a custom dependency extractor
   // dependencyExtractor: undefined,
@@ -82,9 +82,7 @@ export default {
   ],
 
   // A map from regular expressions to module names or to arrays of module names that allow to stub out resources with a single module
-  moduleNameMapper: {
-    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-  },
+  // moduleNameMapper: {'\\.(css|less|scss|sass)$': 'identity-obj-proxy'},
 
   // An array of regexp pattern strings, matched against all module paths before considered 'visible' to the module loader
   // modulePathIgnorePatterns: [],
@@ -108,12 +106,10 @@ export default {
       'jest-junit',
       {
         outputDirectory: 'coverage',
-        outputName: 'TESTS.xml'
-      }
-    ]
-  ]
-  ,
-
+        outputName: 'TESTS.xml',
+      },
+    ],
+  ],
   // Automatically reset mock state between every test
   // resetMocks: false,
 

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "strict": true,
     "jsx": "react",
     "target": "ES2022",
     "module": "esnext",
@@ -10,6 +11,9 @@
       "dom"
     ],
     "outDir": "dist",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
     "pretty": false,
     "esModuleInterop": true,
     "types": [
@@ -21,10 +25,6 @@
     "enable": true
   },
   "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "**/*.test.ts"
+    "src"
   ]
 }
