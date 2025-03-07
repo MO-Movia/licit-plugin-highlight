@@ -46,30 +46,26 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
             };
           }
 
-          // If document didn't change, return current state
           if (!tr.docChanged) {
             return state;
           }
 
-          // Map decorations through the document changes
           let decorations = state.decorations.map(tr.mapping, tr.doc);
 
-          // Only reprocess changed paragraphs
           if (state.searchTerm) {
             const changedRanges = LicitHighlightTextPlugin.getChangedRanges(tr);
             changedRanges.forEach((range) => {
-              // Remove existing decorations in the changed range
               decorations = decorations.remove(
                 decorations.find(range.from, range.to)
               );
 
-              // Add new decorations only for the changed range
               const newDecorations =
                 LicitHighlightTextPlugin.findHighlightsInRange(
                   tr.doc,
                   state,
                   range
                 );
+
               decorations = decorations.add(tr.doc, newDecorations);
             });
           }
@@ -97,17 +93,15 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
         let from = newStart;
         let to = newEnd;
 
-        // Find the containing textblock for the change
         tr.doc.nodesBetween(from, to, (node, pos) => {
           if (node.isTextblock) {
             from = pos;
             to = pos + node.nodeSize;
-            return false; // Don't descend further
+            return false;
           }
           return true;
         });
 
-        // Add a small buffer around the change
         ranges.push({
           from: Math.max(0, from),
           to: Math.min(tr.doc.content.size, to),
@@ -115,7 +109,6 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
       });
     });
 
-    // Merge overlapping ranges
     return ranges.reduce((merged, current) => {
       const prev = merged[merged.length - 1];
       if (prev && current.from <= prev.to) {
@@ -127,58 +120,66 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     }, [] as { from: number; to: number }[]);
   }
 
+  static createSearchRegex(searchTerm: string): RegExp {
+    const escapedTerm = searchTerm.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    return new RegExp(escapedTerm, 'gi');
+  }
+
   static findHighlights(doc: Node, state: PluginState) {
-    if (!state.searchTerm) return DecorationSet.empty;
-
+    if (!state.searchTerm?.trim()) return DecorationSet.empty;
     const decorations: Decoration[] = [];
-    const searchTerm = state.searchTerm.replace(
-      /[-/\\^$*+?.()|[\]{}]/g,
-      '\\$&'
-    );
-    const regex = new RegExp(searchTerm, 'gi');
-
-    let textContent = '';
-    const textPositions: number[] = [];
+    const regex = this.createSearchRegex(state.searchTerm);
     const selectedParaPositions = new Set<number>();
-    let nodeSize = 0;
+    let selectedNodeSize = 0;
 
-    // First pass: collect text, positions, and find selected paragraphs
+    if (state.selectedHighlight) {
+      doc.descendants((node, pos) => {
+        if (node.attrs?.objectId === state.selectedHighlight) {
+          selectedParaPositions.add(pos);
+          selectedNodeSize = node.nodeSize;
+        }
+        return true;
+      });
+    }
+
     doc.descendants((node, pos) => {
-      if (node.attrs?.objectId === state.selectedHighlight) {
-        selectedParaPositions.add(pos);
-        nodeSize = node.nodeSize;
-      }
-      if (node.isText) {
-        textContent += node.text;
-        for (let i = 0; i < node.text.length; i++) {
-          textPositions.push(pos + i);
+      if (node.isText && node.text) {
+        const text = node.text;
+
+        regex.lastIndex = 0;
+
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match.index === regex.lastIndex) {
+            regex.lastIndex++;
+            continue;
+          }
+
+          const from = pos + match.index;
+          const to = from + match[0].length;
+
+          if (match[0].includes('\n')) {
+            continue;
+          }
+
+          const isInSelectedPara = Array.from(selectedParaPositions).some(
+            (paraPos) => from >= paraPos && to <= paraPos + selectedNodeSize
+          );
+
+          const highlightClass =
+            isInSelectedPara && state.individualHighlightClass
+              ? state.individualHighlightClass
+              : state.highlightClass || '';
+
+          decorations.push(
+            Decoration.inline(from, to, {
+              class: highlightClass,
+            })
+          );
         }
       }
       return true;
     });
-
-    // Second pass: find matches and create decorations
-    let match;
-    while ((match = regex.exec(textContent)) !== null) {
-      const from = textPositions[match.index];
-      const to = textPositions[match.index + match[0].length - 1] + 1;
-
-      if (from !== undefined && to !== undefined) {
-        // Check if this match is within a selected paragraph
-        const isInSelectedPara = Array.from(selectedParaPositions).some(
-          (paraPos) => from >= paraPos && to <= paraPos + nodeSize
-        );
-
-        decorations.push(
-          Decoration.inline(from, to, {
-            class:
-              isInSelectedPara && state.individualHighlightClass
-                ? state.individualHighlightClass
-                : state.highlightClass || '',
-          })
-        );
-      }
-    }
 
     return DecorationSet.create(doc, decorations);
   }
@@ -188,69 +189,95 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     state: PluginState,
     range: { from: number; to: number }
   ) {
-    if (!state.searchTerm) return [];
-
+    if (!state.searchTerm?.trim()) return [];
     const decorations: Decoration[] = [];
-    const searchTerm = state.searchTerm.replace(
-      /[-/\\^$*+?.()|[\]{}]/g,
-      '\\$&'
-    );
-    const regex = new RegExp(searchTerm, 'gi');
+    const regex = this.createSearchRegex(state.searchTerm);
+
+    const { selectedParaPositions, selectedNodeSize } =
+      this.getSelectedParagraphs(doc, state, range);
+    const context = {
+      range,
+      selectedParaPositions,
+      selectedNodeSize,
+      state,
+      decorations,
+    };
+
+    doc.nodesBetween(range.from, range.to, (node, pos) => {
+      if (node.isText && node.text) {
+        this.processTextMatches(node.text, regex, pos, context);
+      }
+      return true;
+    });
+
+    return decorations;
+  }
+
+  private static getSelectedParagraphs(
+    doc: Node,
+    state: PluginState,
+    range: { from: number; to: number }
+  ) {
     const selectedParaPositions = new Set<number>();
-    let nodeSize = 0;
+    let selectedNodeSize = 0;
 
-    // Find selected paragraphs in range
-    doc.nodesBetween(range.from, range.to, (node, pos) => {
-      if (node.attrs?.objectId === state.selectedHighlight) {
-        selectedParaPositions.add(pos);
-        nodeSize = node.nodeSize;
-      }
-      return true;
-    });
-
-    let textContent = '';
-    const textPositions: number[] = [];
-
-    // Collect text and positions within range
-    doc.nodesBetween(range.from, range.to, (node, pos) => {
-      if (node.isText) {
-        textContent += node.text;
-        for (let i = 0; i < node.text.length; i++) {
-          textPositions.push(pos + i);
+    if (state.selectedHighlight) {
+      doc.nodesBetween(range.from, range.to, (node, pos) => {
+        if (node.attrs?.objectId === state.selectedHighlight) {
+          selectedParaPositions.add(pos);
+          selectedNodeSize = node.nodeSize;
         }
-      }
-      return true;
-    });
+        return true;
+      });
+    }
 
-    // Find matches and create decorations
+    return { selectedParaPositions, selectedNodeSize };
+  }
+
+  static processTextMatches(
+    text: string,
+    regex: RegExp,
+    pos: number,
+    context: {
+      range: { from: number; to: number };
+      selectedParaPositions: Set<number>;
+      selectedNodeSize: number;
+      state: PluginState;
+      decorations: Decoration[];
+    }
+  ) {
+    regex.lastIndex = 0;
+
     let match;
-    while ((match = regex.exec(textContent)) !== null) {
-      const from = textPositions[match.index];
-      const to = textPositions[match.index + match[0].length - 1] + 1;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index === regex.lastIndex) {
+        regex.lastIndex++; // Prevent infinite loops
+        continue;
+      }
 
-      if (
-        from !== undefined &&
-        to !== undefined &&
-        from >= range.from &&
-        to <= range.to
-      ) {
-        // Check if this match is within a selected paragraph
-        const isInSelectedPara = Array.from(selectedParaPositions).some(
-          (paraPos) => from >= paraPos && to <= paraPos + nodeSize
+      const from = pos + match.index;
+      const to = from + match[0].length;
+
+      if (match[0].includes('\n')) {
+        continue;
+      }
+
+      if (from >= context.range.from && to <= context.range.to) {
+        const isInSelectedPara = Array.from(context.selectedParaPositions).some(
+          (paraPos) =>
+            from >= paraPos && to <= paraPos + context.selectedNodeSize
         );
 
-        decorations.push(
-          Decoration.inline(from, to, {
-            class:
-              isInSelectedPara && state.individualHighlightClass
-                ? state.individualHighlightClass
-                : state.highlightClass || '',
-          })
+        const highlightClass =
+          isInSelectedPara && context.state.individualHighlightClass
+            ? context.state.individualHighlightClass
+            : context.state.highlightClass || '';
+
+        context.decorations.push(
+          Decoration.inline(from, to, { class: highlightClass })
         );
       }
     }
-
-    return decorations;
   }
 
   static updateSearchTerm(
@@ -259,16 +286,14 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     HighlightDocProperties: HighlightDocProperties
   ) {
     const selectedId = HighlightDocProperties.selectedHighlight || '';
-    const highlightClass = HighlightDocProperties.activeHighlightClass;
-    const individualHighlightClass =
-      HighlightDocProperties.individualHighlightClass;
 
     view.dispatch(
       view.state.tr.setMeta('search', {
         searchTerm,
-        highlightClass,
+        highlightClass: HighlightDocProperties.activeHighlightClass,
         selectedHighlight: selectedId,
-        individualHighlightClass,
+        individualHighlightClass:
+          HighlightDocProperties.individualHighlightClass,
       })
     );
   }
