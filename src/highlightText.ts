@@ -1,5 +1,5 @@
 import { Node } from 'prosemirror-model';
-import { Plugin, PluginKey, Transaction } from 'prosemirror-state';
+import { EditorState, Plugin, PluginKey, Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 
 export interface HighlightDocProperties {
@@ -7,7 +7,13 @@ export interface HighlightDocProperties {
   highlightClass?: string;
   selectedHighlight?: string;
   individualHighlightClass?: string;
+  matchWholeWordsOnly?: boolean;
+  caseSensitive?: boolean;
 }
+
+const highlightPluginKey = new PluginKey<PluginState>(
+  'LicitHighlightTextPlugin'
+);
 
 export interface PluginState extends HighlightDocProperties {
   decorations: DecorationSet;
@@ -22,6 +28,9 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
         init(): PluginState {
           return {
             highlightClass: 'highlight',
+            liveUpdates: true,
+            matchWholeWordsOnly: false,
+            caseSensitive: false,
             ...config,
             decorations: DecorationSet.empty,
           };
@@ -35,6 +44,8 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
               highlightClass: searchMeta.highlightClass,
               selectedHighlight: searchMeta.selectedHighlight,
               individualHighlightClass: searchMeta.individualHighlightClass,
+              matchWholeWordsOnly: searchMeta.matchWholeWordsOnly,
+              caseSensitive: searchMeta.caseSensitive,
             };
 
             return {
@@ -48,33 +59,26 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
           }
 
           if (!tr.docChanged || !state.liveUpdates) {
-            return state;
+            return {
+              ...state,
+              decorations: state.decorations.map(tr.mapping, tr.doc),
+            };
           }
 
-          let decorations = state.decorations.map(tr.mapping, tr.doc);
-
           if (state.searchTerm) {
-            const changedRanges = LicitHighlightTextPlugin.getChangedRanges(tr);
-            changedRanges.forEach((range) => {
-              decorations = decorations.remove(
-                decorations.find(range.from, range.to)
-              );
-
-              const newDecorations =
-                LicitHighlightTextPlugin.findHighlightsInRange(
-                  tr.doc,
-                  state.searchTerm,
-                  state,
-                  range
-                );
-
-              decorations = decorations.add(tr.doc, newDecorations);
-            });
+            return {
+              ...state,
+              decorations: LicitHighlightTextPlugin.findHighlights(
+                tr.doc,
+                state.searchTerm,
+                state
+              ),
+            };
           }
 
           return {
             ...state,
-            decorations,
+            decorations: state.decorations.map(tr.mapping, tr.doc),
           };
         },
       },
@@ -125,9 +129,18 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     );
   }
 
-  private static createSearchRegex(searchTerm: string): RegExp {
+  private static createSearchRegex(
+    searchTerm: string,
+    matchWholeWordsOnly: boolean,
+    caseSensitive = false
+  ): RegExp {
     const escapedTerm = searchTerm.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-    return new RegExp(escapedTerm, 'gi');
+    const flags = caseSensitive ? 'g' : 'gi';
+
+    if (matchWholeWordsOnly) {
+      return new RegExp(`\\b${escapedTerm}\\b`, flags);
+    }
+    return new RegExp(escapedTerm, flags);
   }
 
   static findHighlights(
@@ -156,22 +169,97 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
   ) {
     if (!searchTerm?.trim()) return [];
     const decorations: Decoration[] = [];
-    const regex = this.createSearchRegex(searchTerm);
+    const matchWholeWordsOnly =
+      highlightDocProperties.matchWholeWordsOnly ?? false;
+    const caseSensitive = highlightDocProperties.caseSensitive ?? false;
+    const regex = this.createSearchRegex(
+      searchTerm,
+      matchWholeWordsOnly,
+      caseSensitive
+    );
 
     const { selectedParaPositions, selectedNodeSize } =
       this.getSelectedParagraphs(doc, highlightDocProperties, range);
 
+    const textParts: {
+      text: string;
+      pos: number;
+      nodeEnd: number;
+      parentType: string;
+    }[] = [];
+
     doc.nodesBetween(range.from, range.to, (node, pos) => {
       if (node.isText && node.text) {
-        this.processTextMatches(node.text, regex, pos, {
-          range,
-          selectedParaPositions,
-          selectedNodeSize,
-          highlightDocProperties,
-          decorations,
+        let parentType = 'unknown';
+        let depth = 1;
+
+        while (depth <= 3) {
+          const parentNode = doc.resolve(pos).node(depth);
+          if (
+            parentNode &&
+            (parentNode.type.name === 'listItem' ||
+              parentNode.type.name === 'li')
+          ) {
+            parentType = parentNode.type.name;
+            break;
+          }
+          depth++;
+        }
+
+        textParts.push({
+          text: node.text,
+          pos,
+          nodeEnd: pos + node.nodeSize,
+          parentType,
         });
       }
       return true;
+    });
+
+    const listItems = textParts.filter(
+      (part) => part.parentType === 'listItem' || part.parentType === 'li'
+    );
+    const nonListItems = textParts.filter(
+      (part) => part.parentType !== 'listItem' && part.parentType !== 'li'
+    );
+
+    nonListItems.forEach((part) => {
+      this.processTextMatches(part.text, regex, part.pos, {
+        range,
+        selectedParaPositions,
+        selectedNodeSize,
+        highlightDocProperties,
+        decorations,
+      });
+    });
+
+    const listItemsByParent = new Map<
+      string,
+      { text: string; parts: typeof textParts }
+    >();
+
+    listItems.forEach((part) => {
+      const parentKey = `${part.parentType}-${part.pos}`;
+      if (!listItemsByParent.has(parentKey)) {
+        listItemsByParent.set(parentKey, { text: '', parts: [] });
+      }
+      const item = listItemsByParent.get(parentKey)!;
+      item.text += part.text;
+      item.parts.push(part);
+    });
+
+    listItemsByParent.forEach((item) => {
+      if (regex.test(item.text)) {
+        item.parts.forEach((part) => {
+          this.processTextMatches(part.text, regex, part.pos, {
+            range,
+            selectedParaPositions,
+            selectedNodeSize,
+            highlightDocProperties,
+            decorations,
+          });
+        });
+      }
     });
 
     return decorations;
@@ -214,7 +302,7 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
     let match: RegExpExecArray | null;
     while ((match = regex.exec(text)) !== null) {
       if (match.index === regex.lastIndex) {
-        regex.lastIndex++; // Prevent infinite loops
+        regex.lastIndex++;
         continue;
       }
 
@@ -255,6 +343,46 @@ export class LicitHighlightTextPlugin extends Plugin<PluginState> {
         searchTerm,
       })
     );
+  }
+
+  static toggleWholeWordMatching(
+    view: EditorView,
+    matchWholeWordsOnly: boolean
+  ) {
+    const { state } = view;
+    const pluginState = this.getPluginState(state);
+
+    if (pluginState?.searchTerm) {
+      this.updateSearchTerm(view, pluginState.searchTerm, {
+        ...pluginState,
+        matchWholeWordsOnly,
+      });
+    }
+  }
+
+  static toggleCaseSensitive(view: EditorView, caseSensitive: boolean) {
+    const { state } = view;
+    const pluginState = this.getPluginState(state);
+
+    if (pluginState?.searchTerm) {
+      this.updateSearchTerm(view, pluginState.searchTerm, {
+        ...pluginState,
+        caseSensitive,
+      });
+    }
+  }
+
+  static refreshHighlights(view: EditorView) {
+    const { state } = view;
+    const pluginState = this.getPluginState(state);
+
+    if (pluginState?.searchTerm) {
+      this.updateSearchTerm(view, pluginState.searchTerm, pluginState);
+    }
+  }
+
+  static getPluginState(state: EditorState): PluginState | undefined {
+    return highlightPluginKey.get(state) as PluginState | undefined;
   }
 }
 
