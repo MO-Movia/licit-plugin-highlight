@@ -539,4 +539,170 @@ describe('LicitHighlightTextPlugin', () => {
       expect((decoration.spec as Record<string, unknown>).class).toBeFalsy();
     });
   });
+
+  describe('toggleWholeWordMatching', () => {
+    it('should update search term with matchWholeWordsOnly flag', () => {
+      jest.spyOn(LicitHighlightTextPlugin, 'getPluginState').mockReturnValue({
+        searchTerm: 'test',
+        highlightClass: 'highlight-class',
+        decorations: DecorationSet.empty,
+      } as PluginState);
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.toggleWholeWordMatching(mockView, true);
+      expect(updateSearchTermSpy).toHaveBeenCalledWith(
+        mockView,
+        'test',
+        expect.objectContaining({
+          searchTerm: 'test',
+          highlightClass: 'highlight-class',
+          matchWholeWordsOnly: true,
+        })
+      );
+      updateSearchTermSpy.mockRestore();
+    });
+
+    it('should not update search term when plugin state is undefined', () => {
+      jest
+        .spyOn(LicitHighlightTextPlugin, 'getPluginState')
+        .mockReturnValue(undefined);
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.toggleWholeWordMatching(mockView, true);
+
+      expect(updateSearchTermSpy).not.toHaveBeenCalled();
+      updateSearchTermSpy.mockRestore();
+    });
+
+    it('should not update search term when search term is empty', () => {
+      jest.spyOn(LicitHighlightTextPlugin, 'getPluginState').mockReturnValue({
+        searchTerm: '',
+        highlightClass: 'highlight-class',
+        decorations: DecorationSet.empty,
+      } as PluginState);
+
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.toggleWholeWordMatching(mockView, true);
+      expect(updateSearchTermSpy).not.toHaveBeenCalled();
+      updateSearchTermSpy.mockRestore();
+    });
+  });
+
+  describe('refreshHighlights', () => {
+    it('should update search term with existing plugin state', () => {
+      const mockPluginState = {
+        searchTerm: 'test',
+        highlightClass: 'highlight-class',
+        decorations: DecorationSet.empty,
+      } as PluginState;
+
+      jest
+        .spyOn(LicitHighlightTextPlugin, 'getPluginState')
+        .mockReturnValue(mockPluginState);
+
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.refreshHighlights(mockView);
+      expect(updateSearchTermSpy).toHaveBeenCalledWith(
+        mockView,
+        'test',
+        mockPluginState
+      );
+
+      updateSearchTermSpy.mockRestore();
+    });
+
+    it('should not update search term when plugin state is undefined', () => {
+      jest
+        .spyOn(LicitHighlightTextPlugin, 'getPluginState')
+        .mockReturnValue(undefined);
+
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.refreshHighlights(mockView);
+
+      expect(updateSearchTermSpy).not.toHaveBeenCalled();
+      updateSearchTermSpy.mockRestore();
+    });
+
+    it('should not update search term when search term is empty', () => {
+      jest.spyOn(LicitHighlightTextPlugin, 'getPluginState').mockReturnValue({
+        searchTerm: '',
+        highlightClass: 'highlight-class',
+        decorations: DecorationSet.empty,
+      } as PluginState);
+
+      const updateSearchTermSpy = jest
+        .spyOn(LicitHighlightTextPlugin, 'updateSearchTerm')
+        .mockImplementation(() => undefined);
+
+      const mockView = {
+        state: {
+          plugins: [],
+        },
+      } as unknown as EditorView;
+
+      LicitHighlightTextPlugin.refreshHighlights(mockView);
+      expect(updateSearchTermSpy).not.toHaveBeenCalled();
+      updateSearchTermSpy.mockRestore();
+    });
+  });
+
+  it('should handle updateSearchTerm with default empty properties', () => {
+    const mockDispatch = jest.fn();
+    const mockSetMeta = jest.fn().mockReturnValue({});
+
+    const mockView = {
+      dispatch: mockDispatch,
+      state: {
+        tr: {
+          setMeta: mockSetMeta,
+        },
+      },
+    } as unknown as EditorView;
+    LicitHighlightTextPlugin.updateSearchTerm(mockView, 'test');
+    expect(mockSetMeta).toHaveBeenCalledWith('search', {
+      searchTerm: 'test',
+    });
+    expect(mockDispatch).toHaveBeenCalled();
+  });
 });
