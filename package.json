@@ -29,7 +29,7 @@
     "prosemirror-view": "^1.27.0"
   },
   "devDependencies": {
-    "@cyclonedx/cyclonedx-npm": "^1.7.1",
+    "@cyclonedx/cyclonedx-npm": "^2.1.0",
     "@modusoperandi/eslint-config": "^2.0.6",
     "@types/jest": "^29.0.3",
     "copyfiles": "^2.4.1",
